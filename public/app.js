@@ -34,7 +34,7 @@ function renderResults(results = []) {
       if (item.status === "success") {
         return `
           <article class="result-item success">
-            <div class="meta"><strong>${escapeHtml(item.keyLabel)}</strong> • ${escapeHtml(item.model)}</div>
+            <div class="meta"><strong>${escapeHtml(item.keyLabel)}</strong> • ${escapeHtml(item.provider || "openai")} • ${escapeHtml(item.model)}</div>
             <div>${escapeHtml(item.answer)}</div>
           </article>
         `;
@@ -42,7 +42,7 @@ function renderResults(results = []) {
 
       return `
         <article class="result-item error">
-          <div class="meta"><strong>${escapeHtml(item.keyLabel)}</strong> • ${escapeHtml(item.model)}${item.statusCode ? ` • HTTP ${item.statusCode}` : ""}</div>
+          <div class="meta"><strong>${escapeHtml(item.keyLabel)}</strong> • ${escapeHtml(item.provider || "openai")} • ${escapeHtml(item.model)}${item.statusCode ? ` • HTTP ${item.statusCode}` : ""}</div>
           <div>${escapeHtml(item.error || "Erreur inconnue")}</div>
         </article>
       `;

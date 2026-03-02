@@ -1,6 +1,6 @@
 # App-test-api
 
-Petite application web pour tester plusieurs clés API OpenAI sur une même image, avec le prompt fixe :
+Petite application web pour tester plusieurs clés API (OpenAI et Gemini) sur une même image, avec le prompt fixe :
 
 > Peux-tu me donner les informations suivantes liées à l'objet principal mis en avant dans la photo que je fournis :  
 > Type de matériau  
@@ -27,11 +27,15 @@ Puis ouvrir : [http://localhost:3000](http://localhost:3000)
 ## Utilisation
 
 1. Colle plusieurs clés API (une par ligne).
+	- OpenAI : `sk-...`
+	- Gemini : `AIza...`
 2. Choisis l'image à analyser.
-3. Clique **Lancer le test**.
-4. Compare les résultats clé par clé.
+3. Choisis un modèle.
+4. Clique **Lancer le test**.
+5. Compare les résultats clé par clé.
 
 ## Notes
 
 - Les clés sont utilisées uniquement pour l'appel en cours et ne sont pas stockées.
-- Le backend masque les clés dans l'affichage des résultats.# App-test-API_Keys
+- Le backend masque les clés dans l'affichage des résultats.
+- Si une clé Gemini (`AIza...`) est détectée, l'appel est automatiquement fait via Gemini.
