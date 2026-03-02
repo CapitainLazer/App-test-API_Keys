@@ -9,7 +9,10 @@
   <body>
     <main class="container">
       <header class="hero">
-        <h1>Test de clés API</h1>
+        <div class="hero-head">
+          <h1>Test de clés API</h1>
+          <a class="link-btn" href="history.html">Historique</a>
+        </div>
         <p class="subtitle">Reconnaissance d'objet sur image • comparaison multi-clés OpenAI/Gemini/Hugging Face</p>
       </header>
 
@@ -22,8 +25,27 @@
         <section class="card">
         <h2>Prompt utilisé</h2>
         <pre id="promptBox">Peux-tu me donner les informations suivantes liées à l'objet principal mis en avant dans la photo que je fournis :
-Type de matériau
-Dimensions</pre>
+      Type de matériau
+      Dimensions
+
+      Réponds en 3 lignes maximum, sans explication.
+      Format exact :
+      Matériau: &lt;1 mot ou 2 max&gt;
+      Dimensions estimées: &lt;L x l x e en cm, ou "Non estimable"&gt;
+      Poids estimés : &lt; xx Kg, ou "Non estimable"&gt;
+      Etat : &lt; Neuf / bon etat / abimé &gt;
+      Confiance: &lt;faible|moyenne|élevée&gt;
+      Exemple de sortie attendue :
+
+      Matériau: bois (chêne)
+      Dimensions estimées: ~180 x 65 x 3 cm
+      Poids Estimées: ~60 kg
+      Etat : Bon
+      Confiance: moyenne
+
+      NE ME RENVOIE ABSOLUMENT PAS AUTRE CHOSE QUE CE AUE JE TE DEMANDE
+      Je veux une reponse courte et concise tel que decrite
+      renvoie moi ABSOLUMENT une réponse au format json</pre>
         </section>
 
         <section class="card">
@@ -75,8 +97,13 @@ Dimensions</pre>
 
       <section id="panelHf" class="tab-panel">
         <section class="card">
-          <h2>Hugging Face</h2>
-          <p class="hint">Teste plusieurs clés HF (`hf_...`) sur un modèle de détection d'objet.</p>
+          <h2>Prompt utilisé</h2>
+          <pre id="hfPromptInput" contenteditable="true" spellcheck="false"></pre>
+        </section>
+
+        <section class="card">
+          <h2>Configuration</h2>
+          <p class="hint">Inference 100% distante via API Hugging Face (aucun modèle installé localement).</p>
 
           <label for="hfKeysInput">Clés API Hugging Face (une clé par ligne)</label>
           <textarea
@@ -85,10 +112,16 @@ Dimensions</pre>
             placeholder="hf_xxxxxxxxxxxxx"
           ></textarea>
 
+          <label for="hfTaskSelect">Mode</label>
+          <select id="hfTaskSelect">
+            <option value="object-detection">Object detection (image)</option>
+            <option value="text-generation" selected>Text generation (LLM / Kimi)</option>
+          </select>
+
           <div class="grid-2">
             <div>
               <label for="hfModelInput">Modèle HF</label>
-              <input id="hfModelInput" type="text" value="facebook/detr-resnet-50" />
+              <input id="hfModelInput" type="text" value="moonshotai/Kimi-K2.5" />
             </div>
             <div>
               <label for="hfTimeoutInput">Timeout (ms)</label>

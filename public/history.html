@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Historique des réponses</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="hero">
+        <div class="history-top">
+          <h1>Historique des réponses</h1>
+          <div class="history-actions">
+            <a class="link-btn" href="index.html">Retour </a>
+            <button id="clearHistoryBtn" class="secondary-btn" type="button">Vider l'historique</button>
+          </div>
+        </div>
+        <p class="subtitle">Réponses stockées dans le cache du navigateur (localStorage).</p>
+      </header>
+
+      <section class="card">
+        <h2>Entrées</h2>
+        <div id="historyStatus" class="status ok" aria-live="polite"></div>
+        <div id="historyList" class="history-list"></div>
+      </section>
+    </main>
+
+    <script src="history.js"></script>
+  </body>
+</html>

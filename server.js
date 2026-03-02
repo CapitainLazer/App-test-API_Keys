@@ -10,15 +10,40 @@ const port = process.env.PORT || 3000;
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
-const DEFAULT_HF_MODEL = process.env.HF_MODEL || "facebook/detr-resnet-50";
+const DEFAULT_HF_MODEL_TEXT = process.env.HF_MODEL_TEXT || "moonshotai/Kimi-K2.5";
+const DEFAULT_HF_MODEL_VISION = process.env.HF_MODEL_VISION || "facebook/detr-resnet-50";
+const HF_INFERENCE_BASE_URL =
+  process.env.HF_INFERENCE_BASE_URL || "https://router.huggingface.co/hf-inference/models";
+const HF_ROUTER_CHAT_URL =
+  process.env.HF_ROUTER_CHAT_URL || "https://router.huggingface.co/v1/chat/completions";
 const MAX_IMAGE_MB = Number(process.env.MAX_IMAGE_MB || 8);
 const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
 const GEMINI_MODELS_CACHE_TTL_MS = Number(process.env.GEMINI_MODELS_CACHE_TTL_MS || 10 * 60 * 1000);
 const GEMINI_QUOTA_COOLDOWN_MS = Number(process.env.GEMINI_QUOTA_COOLDOWN_MS || 60 * 1000);
 const GEMINI_AUTO_RETRY_MAX_WAIT_MS = Number(process.env.GEMINI_AUTO_RETRY_MAX_WAIT_MS || 15000);
 
-const FIXED_PROMPT =
-  "Peux-tu me donner les informations suivantes liées à l'objet principal mis en avant dans la photo que je fournis :\nType de matériau\nDimensions";
+const FIXED_PROMPT = `Peux-tu me donner les informations suivantes liées à l'objet principal mis en avant dans la photo que je fournis :
+Type de matériau
+Dimensions
+
+Réponds en 3 lignes maximum, sans explication.
+Format exact :
+Matériau: <1 mot ou 2 max>
+Dimensions estimées: <L x l x e en cm, ou "Non estimable">
+Poids estimés : < xx Kg, ou "Non estimable">
+Etat : < Neuf / bon etat / abimé >
+Confiance: <faible|moyenne|élevée>
+Exemple de sortie attendue :
+
+Matériau: bois (chêne)
+Dimensions estimées: ~180 x 65 x 3 cm
+Poids Estimées: ~60 kg
+Etat : Bon
+Confiance: moyenne
+
+NE ME RENVOIE ABSOLUMENT PAS AUTRE CHOSE QUE CE AUE JE TE DEMANDE
+Je veux une reponse courte et concise tel que decrite
+renvoie moi ABSOLUMENT une réponse au format json`;
 
 const geminiModelsCache = new Map();
 const geminiQuotaCooldown = new Map();
@@ -160,6 +185,280 @@ function safeJsonStringify(value) {
   }
 }
 
+function truncateText(value, maxLength = 1200) {
+  const text = String(value || "");
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
+
+function normalizeFieldValue(value, fallback = "Non estimable") {
+  const parsed = String(value || "").trim();
+  return parsed || fallback;
+}
+
+function simplifyStateLabel(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("neuf")) return "Neuf";
+  if (text.includes("abim") || text.includes("abîm")) return "abîmé";
+  if (text.includes("bon")) return "bon etat";
+  return "Non estimable";
+}
+
+function simplifyConfidenceLabel(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("faible")) return "faible";
+  if (text.includes("elev") || text.includes("élev")) return "élevée";
+  if (text.includes("moy")) return "moyenne";
+  return "moyenne";
+}
+
+function normalizeJsonAnswerShape(input) {
+  const object = input && typeof input === "object" ? input : {};
+  const normalized = {};
+
+  for (const [rawKey, rawValue] of Object.entries(object)) {
+    const key = String(rawKey)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+
+    normalized[key] = rawValue;
+  }
+
+  return {
+    materiau: normalizeFieldValue(
+      normalized.materiau ?? normalized.typedemateriau ?? normalized.material,
+      "Non estimable"
+    ),
+    dimensions_estimees: normalizeFieldValue(
+      normalized.dimensionsestimees ?? normalized.dimensions ?? normalized.dimension,
+      "Non estimable"
+    ),
+    poids_estime: normalizeFieldValue(
+      normalized.poidsestimes ?? normalized.poidsestime ?? normalized.poids,
+      "Non estimable"
+    ),
+    etat: simplifyStateLabel(normalized.etat),
+    confiance: simplifyConfidenceLabel(normalized.confiance),
+  };
+}
+
+function extractDimensionComponent(text, labelRegex) {
+  const source = String(text || "");
+  const regex = new RegExp(
+    `${labelRegex}[^\\d]{0,20}(~?\\d+(?:[.,]\\d+)?(?:\\s*[-à]\\s*\\d+(?:[.,]\\d+)?)?)\\s*(cm|mm|m)`,
+    "i"
+  );
+  const match = source.match(regex);
+  if (!match) return null;
+
+  const value = String(match[1] || "").replace(/\s+/g, " ").trim();
+  const unit = String(match[2] || "cm").trim();
+  if (!value) return null;
+  return `${value} ${unit}`;
+}
+
+function extractDimensionEstimateFromText(text) {
+  const source = String(text || "");
+
+  const compactMatch = source.match(
+    /(\d{2,4}(?:[.,]\d+)?\s*(?:x|×)\s*\d{2,4}(?:[.,]\d+)?(?:\s*(?:x|×)\s*\d{1,4}(?:[.,]\d+)?)?\s*(?:cm|mm|m)?)/i
+  );
+  if (compactMatch) {
+    return compactMatch[1].replace(/\s+/g, " ").trim();
+  }
+
+  const height = extractDimensionComponent(source, "hauteur|height|h");
+  const width = extractDimensionComponent(source, "largeur|width|l");
+  const depth = extractDimensionComponent(source, "epaisseur|épaisseur|profondeur|depth|e");
+
+  const parts = [];
+  if (height) parts.push(`H ${height}`);
+  if (width) parts.push(`L ${width}`);
+  if (depth) parts.push(`E ${depth}`);
+
+  if (parts.length > 0) {
+    return parts.join(" • ");
+  }
+
+  return "Non estimable";
+}
+
+function extractWeightEstimateFromText(text) {
+  const source = String(text || "");
+
+  const explicitWeight = source.match(/poids[^\d]{0,25}(~?\d+(?:[.,]\d+)?)\s*(kg|g)/i);
+  if (explicitWeight) {
+    return `${explicitWeight[1]} ${explicitWeight[2]}`.replace(/\s+/g, " ").trim();
+  }
+
+  const genericKg = source.match(/(~?\d+(?:[.,]\d+)?)\s*(kg|g)/i);
+  if (genericKg) {
+    return `${genericKg[1]} ${genericKg[2]}`.replace(/\s+/g, " ").trim();
+  }
+
+  return "Non estimable";
+}
+
+function extractFirstJsonObjectFromText(text) {
+  const source = String(text || "");
+  for (let start = 0; start < source.length; start += 1) {
+    if (source[start] !== "{") continue;
+
+    let depth = 0;
+    for (let end = start; end < source.length; end += 1) {
+      const char = source[end];
+      if (char === "{") depth += 1;
+      if (char === "}") depth -= 1;
+
+      if (depth === 0) {
+        const candidate = source.slice(start, end + 1);
+        try {
+          const parsed = JSON.parse(candidate);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch {
+          break;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function buildHeuristicJsonFromText(text) {
+  const source = String(text || "");
+
+  const materialMatch = source.match(/(bois|ch[eê]ne|m[eé]tal|plastique|verre|c[ée]ramique|textile)/i);
+  const stateMatch = source.match(/(neuf|bon(?:\s+[eé]tat)?|ab[iî]m[ée])/i);
+  const confidenceMatch = source.match(/(faible|moyenne|[eé]lev[ée])/i);
+
+  return {
+    materiau: materialMatch ? materialMatch[1] : "Non estimable",
+    dimensions_estimees: extractDimensionEstimateFromText(source),
+    poids_estime: extractWeightEstimateFromText(source),
+    etat: simplifyStateLabel(stateMatch ? stateMatch[1] : ""),
+    confiance: simplifyConfidenceLabel(confidenceMatch ? confidenceMatch[1] : ""),
+  };
+}
+
+function normalizeToStrictJsonString(text) {
+  const fromJson = extractFirstJsonObjectFromText(text);
+  const normalizedObject = fromJson
+    ? normalizeJsonAnswerShape(fromJson)
+    : buildHeuristicJsonFromText(text);
+
+  return JSON.stringify(normalizedObject, null, 2);
+}
+
+function getHfEstimatedTimeSeconds(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const raw = payload.estimated_time ?? payload.estimatedTime;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value;
+}
+
+function extractHfChatTextPayload(payload) {
+  if (typeof payload === "string") {
+    return payload.trim();
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+
+  const directTextCandidates = [
+    payload.output_text,
+    payload.generated_text,
+    payload.text,
+    payload.completion,
+  ];
+  for (const candidate of directTextCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  const choice = payload?.choices?.[0];
+  if (choice && typeof choice === "object") {
+    if (typeof choice.text === "string" && choice.text.trim()) {
+      return choice.text.trim();
+    }
+
+    if (typeof choice.message === "string" && choice.message.trim()) {
+      return choice.message.trim();
+    }
+
+    const messageContent = choice?.message?.content;
+    if (typeof messageContent === "string" && messageContent.trim()) {
+      return messageContent.trim();
+    }
+
+    if (Array.isArray(messageContent)) {
+      const collected = messageContent
+        .map((part) => {
+          if (typeof part === "string") return part;
+          if (!part || typeof part !== "object") return "";
+          if (typeof part.text === "string") return part.text;
+          if (typeof part.content === "string") return part.content;
+          return "";
+        })
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+
+      if (collected) return collected;
+    }
+
+    if (typeof choice?.delta?.content === "string" && choice.delta.content.trim()) {
+      return choice.delta.content.trim();
+    }
+
+    const reasoning = choice?.message?.reasoning ?? choice?.reasoning;
+    if (typeof reasoning === "string" && reasoning.trim()) {
+      return reasoning.trim();
+    }
+
+    if (Array.isArray(reasoning)) {
+      const collectedReasoning = reasoning
+        .map((part) => {
+          if (typeof part === "string") return part;
+          if (!part || typeof part !== "object") return "";
+          if (typeof part.text === "string") return part.text;
+          if (typeof part.content === "string") return part.content;
+          return "";
+        })
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+
+      if (collectedReasoning) return collectedReasoning;
+    }
+  }
+
+  if (Array.isArray(payload) && payload.length > 0) {
+    for (const item of payload) {
+      if (typeof item === "string" && item.trim()) {
+        return item.trim();
+      }
+      if (item && typeof item === "object") {
+        const itemTextCandidates = [item.generated_text, item.output_text, item.text];
+        for (const candidate of itemTextCandidates) {
+          if (typeof candidate === "string" && candidate.trim()) {
+            return candidate.trim();
+          }
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
 function summarizeHfDetectionOutput(output) {
   if (!Array.isArray(output) || output.length === 0) {
     return "Aucune détection exploitable renvoyée par le modèle Hugging Face.";
@@ -227,9 +526,9 @@ async function testWithOpenAI({ apiKey, imageDataUrl, model, timeoutMs }) {
   };
 }
 
-async function testWithHuggingFace({ apiKey, imageDataUrl, model, timeoutMs }) {
+async function testWithHuggingFace({ apiKey, imageDataUrl, model, timeoutMs, retryCount = 0 }) {
   const { mimeType, base64Data } = parseDataUrl(imageDataUrl);
-  const endpoint = `https://api-inference.huggingface.co/models/${encodeURIComponent(model)}`;
+  const endpoint = `${HF_INFERENCE_BASE_URL.replace(/\/$/, "")}/${encodeURIComponent(model)}`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -254,11 +553,23 @@ async function testWithHuggingFace({ apiKey, imageDataUrl, model, timeoutMs }) {
     }
 
     if (!response.ok) {
+      const estimatedSec = getHfEstimatedTimeSeconds(parsed);
+      if (response.status === 503 && retryCount === 0 && estimatedSec && estimatedSec <= 20) {
+        await sleep(Math.ceil(estimatedSec * 1000));
+        return testWithHuggingFace({ apiKey, imageDataUrl, model, timeoutMs, retryCount: 1 });
+      }
+
       const hfMessage =
         (parsed && typeof parsed === "object" && (parsed.error || parsed.message)) ||
         `Erreur Hugging Face (${response.status})`;
       const error = new Error(String(hfMessage));
       error.status = response.status;
+
+      if (response.status === 503) {
+        const waitMsg = estimatedSec ? `Réessaie dans ~${Math.ceil(estimatedSec)}s.` : "Réessaie dans quelques secondes.";
+        error.message = `Service Hugging Face temporairement indisponible (503, modèle en cours de chargement). ${waitMsg}`;
+      }
+
       throw error;
     }
 
@@ -269,6 +580,89 @@ async function testWithHuggingFace({ apiKey, imageDataUrl, model, timeoutMs }) {
       provider: "huggingface",
       model,
       answer,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function testWithHuggingFaceText({ apiKey, model, timeoutMs, prompt, imageDataUrl, retryCount = 0 }) {
+  const endpoint = HF_ROUTER_CHAT_URL;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: prompt,
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: imageDataUrl,
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 300,
+      }),
+      signal: controller.signal,
+    });
+
+    const responseText = await response.text();
+    let parsed = null;
+    try {
+      parsed = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      parsed = responseText;
+    }
+
+    if (!response.ok) {
+      const estimatedSec = getHfEstimatedTimeSeconds(parsed);
+      if (response.status === 503 && retryCount === 0 && estimatedSec && estimatedSec <= 20) {
+        await sleep(Math.ceil(estimatedSec * 1000));
+        return testWithHuggingFaceText({ apiKey, model, timeoutMs, prompt, imageDataUrl, retryCount: 1 });
+      }
+
+      const hfMessage =
+        (parsed && typeof parsed === "object" && (parsed.error || parsed.message)) ||
+        `Erreur Hugging Face (${response.status})`;
+      const error = new Error(String(hfMessage));
+      error.status = response.status;
+
+      if (response.status === 503) {
+        const waitMsg = estimatedSec ? `Réessaie dans ~${Math.ceil(estimatedSec)}s.` : "Réessaie dans quelques secondes.";
+        error.message = `Service Hugging Face temporairement indisponible (503, modèle en cours de chargement). ${waitMsg}`;
+      }
+
+      throw error;
+    }
+
+    const generatedText = extractHfChatTextPayload(parsed);
+    const fallbackPayload = truncateText(safeJsonStringify(parsed));
+
+    return {
+      status: "success",
+      provider: "huggingface",
+      model,
+      answer: normalizeToStrictJsonString(
+        generatedText ||
+          `Réponse texte non détectée dans le format retourné par l'API. Aperçu brut : ${fallbackPayload}`
+      ),
     };
   } finally {
     clearTimeout(timeoutId);
@@ -534,6 +928,7 @@ app.post("/api/test-keys", async (req, res) => {
       results.push({
         keyLabel: maskKey(key),
         ...result,
+        answer: normalizeToStrictJsonString(result.answer),
       });
     } catch (error) {
       const message = error?.error?.message || error?.message || "Erreur inconnue";
@@ -559,10 +954,13 @@ app.post("/api/test-keys", async (req, res) => {
 });
 
 app.post("/api/test-hf-keys", async (req, res) => {
-  const { keys, imageDataUrl, model, timeoutMs } = req.body || {};
+  const { keys, imageDataUrl, model, timeoutMs, task, prompt } = req.body || {};
 
   const parsedKeys = sanitizeKeys(keys);
-  const selectedModel = String(model || DEFAULT_HF_MODEL).trim() || DEFAULT_HF_MODEL;
+  const selectedTask = String(task || "object-detection").trim().toLowerCase();
+  const defaultHfModel = selectedTask === "text-generation" ? DEFAULT_HF_MODEL_TEXT : DEFAULT_HF_MODEL_VISION;
+  const selectedModel = String(model || defaultHfModel).trim() || defaultHfModel;
+  const selectedPrompt = String(prompt || FIXED_PROMPT).trim() || FIXED_PROMPT;
   const parsedTimeout = Number(timeoutMs || 45000);
   const safeTimeout = Number.isFinite(parsedTimeout)
     ? Math.min(Math.max(parsedTimeout, 5000), 120000)
@@ -574,29 +972,52 @@ app.post("/api/test-hf-keys", async (req, res) => {
     });
   }
 
-  if (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
+  if (!["object-detection", "text-generation"].includes(selectedTask)) {
+    return res.status(400).json({
+      error: "Mode Hugging Face invalide.",
+    });
+  }
+
+  if (selectedTask === "object-detection" && (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/"))) {
     return res.status(400).json({
       error: "Image invalide. Envoie une image au format data URL.",
     });
   }
 
-  const base64Part = imageDataUrl.split(",")[1] || "";
-  const imageSizeBytes = Buffer.byteLength(base64Part, "base64");
-  if (imageSizeBytes > MAX_IMAGE_BYTES) {
+  if (selectedTask === "text-generation" && (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/"))) {
     return res.status(400).json({
-      error: `Image trop volumineuse (max ${MAX_IMAGE_MB}MB).`,
+      error: "Image invalide. Envoie une image au format data URL.",
     });
+  }
+
+  if (selectedTask === "object-detection" || selectedTask === "text-generation") {
+    const base64Part = imageDataUrl.split(",")[1] || "";
+    const imageSizeBytes = Buffer.byteLength(base64Part, "base64");
+    if (imageSizeBytes > MAX_IMAGE_BYTES) {
+      return res.status(400).json({
+        error: `Image trop volumineuse (max ${MAX_IMAGE_MB}MB).`,
+      });
+    }
   }
 
   const results = [];
   for (const key of parsedKeys) {
     try {
-      const result = await testWithHuggingFace({
-        apiKey: key,
-        imageDataUrl,
-        model: selectedModel,
-        timeoutMs: safeTimeout,
-      });
+      const result =
+        selectedTask === "text-generation"
+          ? await testWithHuggingFaceText({
+              apiKey: key,
+              model: selectedModel,
+              timeoutMs: safeTimeout,
+              prompt: selectedPrompt,
+              imageDataUrl,
+            })
+          : await testWithHuggingFace({
+              apiKey: key,
+              imageDataUrl,
+              model: selectedModel,
+              timeoutMs: safeTimeout,
+            });
 
       results.push({
         keyLabel: maskKey(key),
@@ -618,6 +1039,7 @@ app.post("/api/test-hf-keys", async (req, res) => {
   }
 
   return res.json({
+    task: selectedTask,
     model: selectedModel,
     count: results.length,
     results,

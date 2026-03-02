@@ -36,6 +36,36 @@ h2 {
   gap: 6px;
 }
 
+.hero-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  line-height: 1;
+  min-height: 36px;
+  text-decoration: none;
+  border: 1px solid #3c4b63;
+  background: #1a2231;
+  color: #d9e6ff;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.link-btn:hover {
+  filter: brightness(1.08);
+}
+
 .tabs {
   display: flex;
   gap: 10px;
@@ -223,6 +253,66 @@ pre {
   font-size: 13px;
   opacity: 0.85;
   margin-bottom: 8px;
+}
+
+.history-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.history-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.history-actions .link-btn,
+.history-actions .secondary-btn {
+  height: 34px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0;
+}
+
+.secondary-btn {
+  width: auto;
+  min-height: 36px;
+  line-height: 1;
+  border-radius: 999px;
+  padding: 8px 12px;
+  border: 1px solid #3c4b63;
+  background: #1a2231;
+  color: #d9e6ff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#clearHistoryBtn:hover {
+  background: #b42323;
+  border-color: #cf3a3a;
+  color: #ffffff;
+}
+
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-item {
+  border: 1px solid #354057;
+  border-radius: 10px;
+  padding: 12px;
+  background: #1a2230;
+}
+
+.history-item .meta {
+  margin-bottom: 6px;
 }
 
 @media (max-width: 700px) {

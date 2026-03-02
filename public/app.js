@@ -2,6 +2,7 @@ const tabMainBtn = document.getElementById("tabMainBtn");
 const tabHfBtn = document.getElementById("tabHfBtn");
 const panelMain = document.getElementById("panelMain");
 const panelHf = document.getElementById("panelHf");
+const promptBox = document.getElementById("promptBox");
 
 const keysInput = document.getElementById("keysInput");
 const modelSelect = document.getElementById("modelSelect");
@@ -14,18 +15,60 @@ const resultsBox = document.getElementById("results");
 const cooldownInfo = document.getElementById("cooldownInfo");
 
 const hfKeysInput = document.getElementById("hfKeysInput");
+const hfTaskSelect = document.getElementById("hfTaskSelect");
 const hfModelInput = document.getElementById("hfModelInput");
 const hfTimeoutInput = document.getElementById("hfTimeoutInput");
+const hfPromptInput = document.getElementById("hfPromptInput");
 const hfImageInput = document.getElementById("hfImageInput");
 const hfPreview = document.getElementById("hfPreview");
 const hfRunBtn = document.getElementById("hfRunBtn");
 const hfStatusBox = document.getElementById("hfStatus");
 const hfResultsBox = document.getElementById("hfResults");
 
+const HISTORY_STORAGE_KEY = "api_test_history_cache_v1";
+const MAX_HISTORY_ITEMS = 150;
+
 let imageDataUrl = "";
 let hfImageDataUrl = "";
 const geminiCooldownByKey = new Map();
 let cooldownIntervalId = null;
+
+function getHistoryItems() {
+  try {
+    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistoryItems(items) {
+  const safeItems = Array.isArray(items) ? items.slice(0, MAX_HISTORY_ITEMS) : [];
+  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(safeItems));
+}
+
+function appendHistoryEntries({ source, results = [] }) {
+  if (!Array.isArray(results) || results.length === 0) return;
+
+  const nowIso = new Date().toISOString();
+  const entries = results.map((item) => ({
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    createdAt: nowIso,
+    source,
+    keyLabel: item.keyLabel || "clé masquée",
+    provider: item.provider || source,
+    model: item.model || "n/a",
+    status: item.status || "unknown",
+    answer: item.answer || "",
+    error: item.error || "",
+    statusCode: item.statusCode || null,
+  }));
+
+  const existing = getHistoryItems();
+  saveHistoryItems([...entries, ...existing]);
+}
 
 function setStatus(target, message, isError = false) {
   target.textContent = message;
@@ -309,6 +352,7 @@ runBtn.addEventListener("click", async () => {
     }
 
     renderResults(resultsBox, data.results || [], "openai");
+    appendHistoryEntries({ source: "openai-gemini", results: data.results || [] });
     updateCooldownsFromResults(keys, data.results || []);
     setStatus(statusBox, `Terminé : ${data.count || 0} clé(s) testée(s).`);
   } catch (error) {
@@ -321,7 +365,9 @@ runBtn.addEventListener("click", async () => {
 
 hfRunBtn.addEventListener("click", async () => {
   const keys = parseKeys(hfKeysInput.value);
+  const task = hfTaskSelect.value;
   const model = hfModelInput.value.trim() || "facebook/detr-resnet-50";
+  const prompt = String(hfPromptInput?.textContent || "").trim();
   const timeoutMs = Number(hfTimeoutInput.value || 45000);
 
   if (!keys.length) {
@@ -329,8 +375,18 @@ hfRunBtn.addEventListener("click", async () => {
     return;
   }
 
-  if (!hfImageDataUrl) {
-    setStatus(hfStatusBox, "Ajoute une image avant de lancer le test.", true);
+  if (task === "object-detection" && !hfImageDataUrl) {
+    setStatus(hfStatusBox, "Ajoute une image avant de lancer le test (mode object detection).", true);
+    return;
+  }
+
+  if (task === "text-generation" && !prompt) {
+    setStatus(hfStatusBox, "Prompt principal introuvable. Vérifie la zone de prompt de la première page.", true);
+    return;
+  }
+
+  if (task === "text-generation" && !hfImageDataUrl) {
+    setStatus(hfStatusBox, "Ajoute une image avant de lancer le test (mode text-generation).", true);
     return;
   }
 
@@ -347,9 +403,11 @@ hfRunBtn.addEventListener("click", async () => {
       },
       body: JSON.stringify({
         keys,
+        task,
         model,
+        prompt,
         timeoutMs,
-        imageDataUrl: hfImageDataUrl,
+        imageDataUrl: hfImageDataUrl || null,
       }),
     });
 
@@ -359,6 +417,7 @@ hfRunBtn.addEventListener("click", async () => {
     }
 
     renderResults(hfResultsBox, data.results || [], "huggingface");
+    appendHistoryEntries({ source: "huggingface", results: data.results || [] });
     setStatus(hfStatusBox, `Terminé : ${data.count || 0} clé(s) HF testée(s).`);
   } catch (error) {
     setStatus(hfStatusBox, error.message || "Erreur pendant le test Hugging Face.", true);
@@ -370,6 +429,13 @@ hfRunBtn.addEventListener("click", async () => {
 
 keysInput.addEventListener("input", renderCooldownInfo);
 modelSelect.addEventListener("change", renderCooldownInfo);
+
+if (hfPromptInput && promptBox) {
+  hfPromptInput.textContent = String(promptBox.textContent || "").trim();
+  hfPromptInput.addEventListener("input", () => {
+    promptBox.textContent = hfPromptInput.textContent;
+  });
+}
 
  tabMainBtn.addEventListener("click", () => switchTab("main"));
  tabHfBtn.addEventListener("click", () => switchTab("hf"));
