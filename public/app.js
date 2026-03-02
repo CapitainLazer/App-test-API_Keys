@@ -1,3 +1,8 @@
+const tabMainBtn = document.getElementById("tabMainBtn");
+const tabHfBtn = document.getElementById("tabHfBtn");
+const panelMain = document.getElementById("panelMain");
+const panelHf = document.getElementById("panelHf");
+
 const keysInput = document.getElementById("keysInput");
 const modelSelect = document.getElementById("modelSelect");
 const timeoutInput = document.getElementById("timeoutInput");
@@ -8,13 +13,24 @@ const statusBox = document.getElementById("status");
 const resultsBox = document.getElementById("results");
 const cooldownInfo = document.getElementById("cooldownInfo");
 
+const hfKeysInput = document.getElementById("hfKeysInput");
+const hfModelInput = document.getElementById("hfModelInput");
+const hfTimeoutInput = document.getElementById("hfTimeoutInput");
+const hfImageInput = document.getElementById("hfImageInput");
+const hfPreview = document.getElementById("hfPreview");
+const hfRunBtn = document.getElementById("hfRunBtn");
+const hfStatusBox = document.getElementById("hfStatus");
+const hfResultsBox = document.getElementById("hfResults");
+
 let imageDataUrl = "";
+let hfImageDataUrl = "";
 const geminiCooldownByKey = new Map();
 let cooldownIntervalId = null;
 
-function setStatus(message, isError = false) {
-  statusBox.textContent = message;
-  statusBox.style.color = isError ? "#ff8f8f" : "#b9d7ff";
+function setStatus(target, message, isError = false) {
+  target.textContent = message;
+  target.classList.toggle("error", isError);
+  target.classList.toggle("ok", !isError);
 }
 
 function escapeHtml(value) {
@@ -26,18 +42,18 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function renderResults(results = []) {
+function renderResults(target, results = [], defaultProvider = "openai") {
   if (!results.length) {
-    resultsBox.innerHTML = "<p>Aucun résultat pour le moment.</p>";
+    target.innerHTML = "<p class=\"hint\">Aucun résultat pour le moment. Lance un test pour voir les réponses de chaque clé.</p>";
     return;
   }
 
-  resultsBox.innerHTML = results
+  target.innerHTML = results
     .map((item) => {
       if (item.status === "success") {
         return `
           <article class="result-item success">
-            <div class="meta"><strong>${escapeHtml(item.keyLabel)}</strong> • ${escapeHtml(item.provider || "openai")} • ${escapeHtml(item.model)}</div>
+            <div class="meta"><strong>${escapeHtml(item.keyLabel)}</strong> • ${escapeHtml(item.provider || defaultProvider)} • ${escapeHtml(item.model)}</div>
             <div>${escapeHtml(item.answer)}</div>
           </article>
         `;
@@ -45,7 +61,7 @@ function renderResults(results = []) {
 
       return `
         <article class="result-item error">
-          <div class="meta"><strong>${escapeHtml(item.keyLabel)}</strong> • ${escapeHtml(item.provider || "openai")} • ${escapeHtml(item.model)}${item.statusCode ? ` • HTTP ${item.statusCode}` : ""}</div>
+          <div class="meta"><strong>${escapeHtml(item.keyLabel)}</strong> • ${escapeHtml(item.provider || defaultProvider)} • ${escapeHtml(item.model)}${item.statusCode ? ` • HTTP ${item.statusCode}` : ""}</div>
           <div>${escapeHtml(item.error || "Erreur inconnue")}</div>
         </article>
       `;
@@ -195,6 +211,17 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function switchTab(tab) {
+  const isMain = tab === "main";
+
+  tabMainBtn.classList.toggle("active", isMain);
+  tabHfBtn.classList.toggle("active", !isMain);
+  panelMain.classList.toggle("active", isMain);
+  panelHf.classList.toggle("active", !isMain);
+  tabMainBtn.setAttribute("aria-selected", String(isMain));
+  tabHfBtn.setAttribute("aria-selected", String(!isMain));
+}
+
 imageInput.addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
   if (!file) {
@@ -207,11 +234,31 @@ imageInput.addEventListener("change", async (event) => {
     imageDataUrl = await readFileAsDataUrl(file);
     preview.src = imageDataUrl;
     preview.hidden = false;
-    setStatus("Image chargée.");
+    setStatus(statusBox, "Image chargée.");
   } catch (error) {
     imageDataUrl = "";
     preview.hidden = true;
-    setStatus(error.message || "Erreur de chargement image.", true);
+    setStatus(statusBox, error.message || "Erreur de chargement image.", true);
+  }
+});
+
+hfImageInput.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) {
+    hfImageDataUrl = "";
+    hfPreview.hidden = true;
+    return;
+  }
+
+  try {
+    hfImageDataUrl = await readFileAsDataUrl(file);
+    hfPreview.src = hfImageDataUrl;
+    hfPreview.hidden = false;
+    setStatus(hfStatusBox, "Image chargée.");
+  } catch (error) {
+    hfImageDataUrl = "";
+    hfPreview.hidden = true;
+    setStatus(hfStatusBox, error.message || "Erreur de chargement image.", true);
   }
 });
 
@@ -222,24 +269,25 @@ runBtn.addEventListener("click", async () => {
   const activeCooldowns = getActiveGeminiCooldowns(keys, model);
 
   if (!keys.length) {
-    setStatus("Ajoute au moins une clé API.", true);
+    setStatus(statusBox, "Ajoute au moins une clé API.", true);
     return;
   }
 
   if (activeCooldowns.length) {
-    setStatus("Certaines clés Gemini sont en cooldown. Attends la fin du délai avant de relancer.", true);
+    setStatus(statusBox, "Certaines clés Gemini sont en cooldown. Attends la fin du délai avant de relancer.", true);
     renderCooldownInfo();
     return;
   }
 
   if (!imageDataUrl) {
-    setStatus("Ajoute une image avant de lancer le test.", true);
+    setStatus(statusBox, "Ajoute une image avant de lancer le test.", true);
     return;
   }
 
   runBtn.disabled = true;
-  renderResults([]);
-  setStatus(`Test en cours sur ${keys.length} clé(s)...`);
+  runBtn.textContent = "Test en cours...";
+  renderResults(resultsBox, []);
+  setStatus(statusBox, `Test en cours sur ${keys.length} clé(s)...`);
 
   try {
     const response = await fetch("/api/test-keys", {
@@ -260,17 +308,73 @@ runBtn.addEventListener("click", async () => {
       throw new Error(data.error || "Erreur backend");
     }
 
-    renderResults(data.results || []);
+    renderResults(resultsBox, data.results || [], "openai");
     updateCooldownsFromResults(keys, data.results || []);
-    setStatus(`Terminé : ${data.count || 0} clé(s) testée(s).`);
+    setStatus(statusBox, `Terminé : ${data.count || 0} clé(s) testée(s).`);
   } catch (error) {
-    setStatus(error.message || "Erreur pendant le test.", true);
+    setStatus(statusBox, error.message || "Erreur pendant le test.", true);
   } finally {
     runBtn.disabled = false;
+    runBtn.textContent = "Lancer le test";
   }
 });
 
-renderResults([]);
+hfRunBtn.addEventListener("click", async () => {
+  const keys = parseKeys(hfKeysInput.value);
+  const model = hfModelInput.value.trim() || "facebook/detr-resnet-50";
+  const timeoutMs = Number(hfTimeoutInput.value || 45000);
+
+  if (!keys.length) {
+    setStatus(hfStatusBox, "Ajoute au moins une clé Hugging Face.", true);
+    return;
+  }
+
+  if (!hfImageDataUrl) {
+    setStatus(hfStatusBox, "Ajoute une image avant de lancer le test.", true);
+    return;
+  }
+
+  hfRunBtn.disabled = true;
+  hfRunBtn.textContent = "Test HF en cours...";
+  renderResults(hfResultsBox, [], "huggingface");
+  setStatus(hfStatusBox, `Test Hugging Face en cours sur ${keys.length} clé(s)...`);
+
+  try {
+    const response = await fetch("/api/test-hf-keys", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        keys,
+        model,
+        timeoutMs,
+        imageDataUrl: hfImageDataUrl,
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Erreur backend Hugging Face");
+    }
+
+    renderResults(hfResultsBox, data.results || [], "huggingface");
+    setStatus(hfStatusBox, `Terminé : ${data.count || 0} clé(s) HF testée(s).`);
+  } catch (error) {
+    setStatus(hfStatusBox, error.message || "Erreur pendant le test Hugging Face.", true);
+  } finally {
+    hfRunBtn.disabled = false;
+    hfRunBtn.textContent = "Lancer le test Hugging Face";
+  }
+});
+
 keysInput.addEventListener("input", renderCooldownInfo);
 modelSelect.addEventListener("change", renderCooldownInfo);
+
+ tabMainBtn.addEventListener("click", () => switchTab("main"));
+ tabHfBtn.addEventListener("click", () => switchTab("hf"));
+
+renderResults(resultsBox, []);
+renderResults(hfResultsBox, [], "huggingface");
 renderCooldownInfo();
+switchTab("main");

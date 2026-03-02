@@ -8,16 +8,25 @@
   </head>
   <body>
     <main class="container">
-      <h1>Test de clés API (reconnaissance d'objet)</h1>
+      <header class="hero">
+        <h1>Test de clés API</h1>
+        <p class="subtitle">Reconnaissance d'objet sur image • comparaison multi-clés OpenAI/Gemini/Hugging Face</p>
+      </header>
 
-      <section class="card">
+      <section class="tabs" aria-label="Choix du provider">
+        <button id="tabMainBtn" class="tab-btn active" type="button">OpenAI / Gemini</button>
+        <button id="tabHfBtn" class="tab-btn" type="button">Hugging Face</button>
+      </section>
+
+      <section id="panelMain" class="tab-panel active">
+        <section class="card">
         <h2>Prompt utilisé</h2>
         <pre id="promptBox">Peux-tu me donner les informations suivantes liées à l'objet principal mis en avant dans la photo que je fournis :
 Type de matériau
 Dimensions</pre>
-      </section>
+        </section>
 
-      <section class="card">
+        <section class="card">
         <h2>Configuration</h2>
         <label for="keysInput">Clés API (une clé par ligne)</label>
         <textarea
@@ -25,11 +34,13 @@ Dimensions</pre>
           rows="6"
           placeholder="sk-xxxx\nAIzaSy..."
         ></textarea>
+        <p class="hint">Formats pris en charge : OpenAI (`sk-...`) et Gemini (`AIza...`).</p>
 
         <div class="grid-2">
           <div>
             <label for="modelSelect">Modèle</label>
             <select id="modelSelect">
+              <option value="auto-general">auto-general (provider + modèle auto)</option>
               <option value="gpt-4.1-mini" selected>gpt-4.1-mini</option>
               <option value="gpt-4.1">gpt-4.1</option>
               <option value="gpt-4o-mini">gpt-4o-mini</option>
@@ -53,12 +64,50 @@ Dimensions</pre>
 
         <button id="runBtn" type="button">Lancer le test</button>
         <div id="cooldownInfo" class="cooldown-info" hidden></div>
+        </section>
+
+        <section class="card">
+        <h2>Résultats</h2>
+        <div id="status" class="status ok" aria-live="polite"></div>
+        <div id="results"></div>
+        </section>
       </section>
 
-      <section class="card">
-        <h2>Résultats</h2>
-        <div id="status" class="status"></div>
-        <div id="results" class="results"></div>
+      <section id="panelHf" class="tab-panel">
+        <section class="card">
+          <h2>Hugging Face</h2>
+          <p class="hint">Teste plusieurs clés HF (`hf_...`) sur un modèle de détection d'objet.</p>
+
+          <label for="hfKeysInput">Clés API Hugging Face (une clé par ligne)</label>
+          <textarea
+            id="hfKeysInput"
+            rows="6"
+            placeholder="hf_xxxxxxxxxxxxx"
+          ></textarea>
+
+          <div class="grid-2">
+            <div>
+              <label for="hfModelInput">Modèle HF</label>
+              <input id="hfModelInput" type="text" value="facebook/detr-resnet-50" />
+            </div>
+            <div>
+              <label for="hfTimeoutInput">Timeout (ms)</label>
+              <input id="hfTimeoutInput" type="number" value="45000" min="5000" step="1000" />
+            </div>
+          </div>
+
+          <label for="hfImageInput">Image à analyser</label>
+          <input id="hfImageInput" type="file" accept="image/*" />
+          <img id="hfPreview" alt="Aperçu Hugging Face" hidden />
+
+          <button id="hfRunBtn" type="button">Lancer le test Hugging Face</button>
+        </section>
+
+        <section class="card">
+          <h2>Résultats Hugging Face</h2>
+          <div id="hfStatus" class="status ok" aria-live="polite"></div>
+          <div id="hfResults"></div>
+        </section>
       </section>
     </main>
 

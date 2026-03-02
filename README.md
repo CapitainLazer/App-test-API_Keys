@@ -1,6 +1,6 @@
 # App-test-api
 
-Petite application web pour tester plusieurs clés API (OpenAI et Gemini) sur une même image, avec le prompt fixe :
+Petite application web pour tester plusieurs clés API (OpenAI, Gemini et Hugging Face) sur une même image, avec le prompt fixe :
 
 > Peux-tu me donner les informations suivantes liées à l'objet principal mis en avant dans la photo que je fournis :  
 > Type de matériau  
@@ -26,13 +26,17 @@ Puis ouvrir : [http://localhost:3000](http://localhost:3000)
 
 ## Utilisation
 
-1. Colle plusieurs clés API (une par ligne).
+1. Choisis l'onglet provider :
+	- **OpenAI / Gemini**
+	- **Hugging Face**
+2. Colle plusieurs clés API (une par ligne).
 	- OpenAI : `sk-...`
 	- Gemini : `AIza...`
-2. Choisis l'image à analyser.
-3. Choisis un modèle.
-4. Clique **Lancer le test**.
-5. Compare les résultats clé par clé.
+	- Hugging Face : `hf_...`
+3. Choisis l'image à analyser.
+4. Choisis un modèle.
+5. Clique **Lancer le test**.
+6. Compare les résultats clé par clé.
 
 ## Notes
 

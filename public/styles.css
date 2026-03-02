@@ -5,16 +5,17 @@
 
 body {
   margin: 0;
-  padding: 24px;
-  background: #121212;
-  color: #e7e7e7;
+  padding: 28px 16px;
+  background: radial-gradient(circle at top, #1b1f2a 0%, #111318 45%, #0e1014 100%);
+  color: #e8ecf3;
+  line-height: 1.45;
 }
 
 .container {
-  max-width: 900px;
+  max-width: 980px;
   margin: 0 auto;
   display: grid;
-  gap: 16px;
+  gap: 18px;
 }
 
 h1,
@@ -22,17 +23,67 @@ h2 {
   margin: 0 0 10px;
 }
 
+h1 {
+  font-size: clamp(1.45rem, 2.2vw, 2rem);
+}
+
+h2 {
+  font-size: 1.05rem;
+}
+
+.hero {
+  display: grid;
+  gap: 6px;
+}
+
+.tabs {
+  display: flex;
+  gap: 10px;
+}
+
+.tab-btn {
+  width: auto;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid #3c4b63;
+  background: #1a2231;
+  color: #d9e6ff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tab-btn.active {
+  background: linear-gradient(180deg, #2d7fff 0%, #1f67db 100%);
+  border-color: #2c76f0;
+}
+
+.tab-panel {
+  display: none;
+  gap: 18px;
+}
+
+.tab-panel.active {
+  display: grid;
+}
+
+.subtitle {
+  margin: 0;
+  opacity: 0.82;
+  font-size: 0.95rem;
+}
+
 .card {
-  border: 1px solid #353535;
-  background: #1b1b1b;
-  border-radius: 10px;
-  padding: 16px;
+  border: 1px solid #2f3746;
+  background: rgba(20, 24, 31, 0.9);
+  border-radius: 12px;
+  padding: 18px;
+  backdrop-filter: blur(3px);
 }
 
 label {
   display: block;
   margin-bottom: 6px;
-  margin-top: 10px;
+  margin-top: 12px;
   font-weight: 600;
 }
 
@@ -43,49 +94,94 @@ button,
 pre {
   width: 100%;
   box-sizing: border-box;
-  border-radius: 8px;
-  border: 1px solid #4a4a4a;
-  background: #222;
-  color: #f5f5f5;
-  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #3a4558;
+  background: #1b2230;
+  color: #f3f6ff;
+  padding: 11px 12px;
   font-size: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+textarea:focus,
+input:focus,
+select:focus {
+  outline: none;
+  border-color: #4e9eff;
+  box-shadow: 0 0 0 3px rgba(78, 158, 255, 0.2);
 }
 
 button {
   margin-top: 14px;
   cursor: pointer;
-  background: #0e639c;
-  border-color: #0e639c;
+  background: linear-gradient(180deg, #2d7fff 0%, #1f67db 100%);
+  border-color: #2c76f0;
   font-weight: 700;
+  letter-spacing: 0.1px;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.06);
 }
 
 button:disabled {
-  opacity: 0.6;
+  opacity: 0.65;
   cursor: not-allowed;
+}
+
+pre {
+  white-space: pre-wrap;
+}
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 14px;
 }
 
 #preview {
   margin-top: 12px;
   max-width: 100%;
-  border-radius: 8px;
-  border: 1px solid #3f3f3f;
+  border-radius: 10px;
+  border: 1px solid #364258;
+}
+
+#hfPreview {
+  margin-top: 12px;
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid #364258;
 }
 
 .status {
   min-height: 24px;
   margin-bottom: 12px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(18, 31, 53, 0.7);
+  border: 1px solid #2a3c57;
+}
+
+.status.ok {
+  color: #b9d7ff;
+}
+
+.status.error {
+  color: #ff9f9f;
+  background: rgba(58, 26, 26, 0.75);
+  border-color: #6f3333;
 }
 
 .cooldown-info {
   margin-top: 12px;
-  border: 1px solid #6b5720;
-  background: #2b2414;
+  border: 1px solid #725d2a;
+  background: rgba(60, 49, 24, 0.75);
   border-radius: 8px;
   padding: 10px;
   font-size: 13px;
@@ -102,28 +198,30 @@ button:disabled {
   border: 1px solid #8d6f2f;
   border-radius: 999px;
   padding: 4px 8px;
-  background: #3a2f18;
+  background: #41351a;
 }
 
 .result-item {
-  border: 1px solid #3f3f3f;
-  border-radius: 8px;
-  padding: 12px;
+  border: 1px solid #354057;
+  border-radius: 10px;
+  padding: 13px;
   margin-bottom: 10px;
-  background: #202020;
+  background: #1a2230;
 }
 
 .result-item.success {
   border-color: #2f8f5b;
+  background: rgba(21, 51, 36, 0.45);
 }
 
 .result-item.error {
   border-color: #b95f5f;
+  background: rgba(66, 28, 32, 0.45);
 }
 
 .meta {
   font-size: 13px;
-  opacity: 0.8;
+  opacity: 0.85;
   margin-bottom: 8px;
 }
 
