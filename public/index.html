@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test clés API - Reconnaissance objet</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Test de clés API (reconnaissance d'objet)</h1>
+
+      <section class="card">
+        <h2>Prompt utilisé</h2>
+        <pre id="promptBox">Peux-tu me donner les informations suivantes liées à l'objet principal mis en avant dans la photo que je fournis :
+Type de matériau
+Dimensions</pre>
+      </section>
+
+      <section class="card">
+        <h2>Configuration</h2>
+        <label for="keysInput">Clés API (une clé par ligne)</label>
+        <textarea
+          id="keysInput"
+          rows="6"
+          placeholder="sk-xxxx\nsk-yyyy"
+        ></textarea>
+
+        <div class="grid-2">
+          <div>
+            <label for="modelInput">Modèle</label>
+            <input id="modelInput" type="text" value="gpt-4.1-mini" />
+          </div>
+          <div>
+            <label for="timeoutInput">Timeout (ms)</label>
+            <input id="timeoutInput" type="number" value="45000" min="5000" step="1000" />
+          </div>
+        </div>
+
+        <label for="imageInput">Image à analyser</label>
+        <input id="imageInput" type="file" accept="image/*" />
+        <img id="preview" alt="Aperçu" hidden />
+
+        <button id="runBtn" type="button">Lancer le test</button>
+      </section>
+
+      <section class="card">
+        <h2>Résultats</h2>
+        <div id="status" class="status"></div>
+        <div id="results" class="results"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
