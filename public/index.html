@@ -28,8 +28,14 @@ Dimensions</pre>
 
         <div class="grid-2">
           <div>
-            <label for="modelInput">Modèle</label>
-            <input id="modelInput" type="text" value="gpt-4.1-mini" />
+            <label for="modelSelect">Modèle</label>
+            <select id="modelSelect">
+              <option value="gpt-4.1-mini" selected>gpt-4.1-mini</option>
+              <option value="gpt-4.1">gpt-4.1</option>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="gpt-4o">gpt-4o</option>
+              <option value="gmini">gmini</option>
+            </select>
           </div>
           <div>
             <label for="timeoutInput">Timeout (ms)</label>

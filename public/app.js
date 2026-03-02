@@ -1,5 +1,5 @@
 const keysInput = document.getElementById("keysInput");
-const modelInput = document.getElementById("modelInput");
+const modelSelect = document.getElementById("modelSelect");
 const timeoutInput = document.getElementById("timeoutInput");
 const imageInput = document.getElementById("imageInput");
 const preview = document.getElementById("preview");
@@ -88,7 +88,7 @@ imageInput.addEventListener("change", async (event) => {
 
 runBtn.addEventListener("click", async () => {
   const keys = parseKeys(keysInput.value);
-  const model = modelInput.value.trim() || "gpt-4.1-mini";
+  const model = modelSelect.value.trim() || "gpt-4.1-mini";
   const timeoutMs = Number(timeoutInput.value || 45000);
 
   if (!keys.length) {
