@@ -82,6 +82,29 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+.cooldown-info {
+  margin-top: 12px;
+  border: 1px solid #6b5720;
+  background: #2b2414;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+}
+
+.cooldown-items {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cooldown-item {
+  border: 1px solid #8d6f2f;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #3a2f18;
+}
+
 .result-item {
   border: 1px solid #3f3f3f;
   border-radius: 8px;
