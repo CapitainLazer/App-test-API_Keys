@@ -7,6 +7,7 @@ const promptBox = document.getElementById("promptBox");
 const keysInput = document.getElementById("keysInput");
 const modelSelect = document.getElementById("modelSelect");
 const timeoutInput = document.getElementById("timeoutInput");
+const maxConcurrentInput = document.getElementById("maxConcurrentInput");
 const imageInput = document.getElementById("imageInput");
 const preview = document.getElementById("preview");
 const runBtn = document.getElementById("runBtn");
@@ -309,6 +310,7 @@ runBtn.addEventListener("click", async () => {
   const keys = parseKeys(keysInput.value);
   const model = modelSelect.value.trim() || "gpt-4.1-mini";
   const timeoutMs = Number(timeoutInput.value || 45000);
+  const maxConcurrent = Number(maxConcurrentInput?.value || 1);
   const activeCooldowns = getActiveGeminiCooldowns(keys, model);
 
   if (!keys.length) {
@@ -330,7 +332,7 @@ runBtn.addEventListener("click", async () => {
   runBtn.disabled = true;
   runBtn.textContent = "Test en cours...";
   renderResults(resultsBox, []);
-  setStatus(statusBox, `Test en cours sur ${keys.length} clé(s)...`);
+  setStatus(statusBox, `Test en cours sur ${keys.length} clé(s) • concurrence max ${Math.min(Math.max(Math.floor(maxConcurrent) || 1, 1), 5)}...`);
 
   try {
     const response = await fetch("/api/test-keys", {
@@ -342,6 +344,7 @@ runBtn.addEventListener("click", async () => {
         keys,
         model,
         timeoutMs,
+        maxConcurrent,
         imageDataUrl,
       }),
     });
@@ -352,7 +355,7 @@ runBtn.addEventListener("click", async () => {
     }
 
     renderResults(resultsBox, data.results || [], "openai");
-    appendHistoryEntries({ source: "openai-gemini", results: data.results || [] });
+    appendHistoryEntries({ source: "openai-gemini-grok-groq", results: data.results || [] });
     updateCooldownsFromResults(keys, data.results || []);
     setStatus(statusBox, `Terminé : ${data.count || 0} clé(s) testée(s).`);
   } catch (error) {

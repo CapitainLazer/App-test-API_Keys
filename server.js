@@ -10,6 +10,10 @@ const port = process.env.PORT || 3000;
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+const DEFAULT_GROK_MODEL = process.env.GROK_MODEL || "grok-2-vision-latest";
+const GROK_API_BASE_URL = process.env.GROK_API_BASE_URL || "https://api.x.ai/v1";
+const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
+const GROQ_API_BASE_URL = process.env.GROQ_API_BASE_URL || "https://api.groq.com/openai/v1";
 const DEFAULT_HF_MODEL_TEXT = process.env.HF_MODEL_TEXT || "moonshotai/Kimi-K2.5";
 const DEFAULT_HF_MODEL_VISION = process.env.HF_MODEL_VISION || "facebook/detr-resnet-50";
 const HF_INFERENCE_BASE_URL =
@@ -21,6 +25,7 @@ const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
 const GEMINI_MODELS_CACHE_TTL_MS = Number(process.env.GEMINI_MODELS_CACHE_TTL_MS || 10 * 60 * 1000);
 const GEMINI_QUOTA_COOLDOWN_MS = Number(process.env.GEMINI_QUOTA_COOLDOWN_MS || 60 * 1000);
 const GEMINI_AUTO_RETRY_MAX_WAIT_MS = Number(process.env.GEMINI_AUTO_RETRY_MAX_WAIT_MS || 15000);
+const MAX_CONCURRENT_REQUESTS = Number(process.env.MAX_CONCURRENT_REQUESTS || 5);
 
 const FIXED_PROMPT = `Peux-tu me donner les informations suivantes liées à l'objet principal mis en avant dans la photo que je fournis :
 Type de matériau
@@ -74,12 +79,30 @@ function isGeminiModel(model) {
   return normalized === "gemini" || normalized.startsWith("gemini-");
 }
 
+function isGrokModel(model) {
+  const normalized = String(model || "").trim().toLowerCase();
+  return normalized === "grok" || normalized.startsWith("grok-");
+}
+
+function isGroqModel(model) {
+  const normalized = String(model || "").trim().toLowerCase();
+  return normalized === "groq" || normalized.includes("(groq)") || normalized.includes("llama-4-scout-17b-16e-instruct");
+}
+
 function isAutoGeneralModel(model) {
   return String(model || "").trim().toLowerCase() === "auto-general";
 }
 
 function isGeminiKey(apiKey) {
   return String(apiKey || "").trim().startsWith("AIza");
+}
+
+function isGrokKey(apiKey) {
+  return String(apiKey || "").trim().startsWith("xai-");
+}
+
+function isGroqKey(apiKey) {
+  return String(apiKey || "").trim().startsWith("gsk_");
 }
 
 function resolveProvider({ apiKey, selectedModel }) {
@@ -91,9 +114,37 @@ function resolveProvider({ apiKey, selectedModel }) {
       };
     }
 
+    if (isGrokKey(apiKey)) {
+      return {
+        provider: "grok",
+        model: DEFAULT_GROK_MODEL,
+      };
+    }
+
+    if (isGroqKey(apiKey)) {
+      return {
+        provider: "groq",
+        model: DEFAULT_GROQ_MODEL,
+      };
+    }
+
     return {
       provider: "openai",
       model: DEFAULT_MODEL,
+    };
+  }
+
+  if (isGrokModel(selectedModel)) {
+    return {
+      provider: "grok",
+      model: selectedModel,
+    };
+  }
+
+  if (isGroqModel(selectedModel)) {
+    return {
+      provider: "groq",
+      model: selectedModel,
     };
   }
 
@@ -108,6 +159,20 @@ function resolveProvider({ apiKey, selectedModel }) {
     return {
       provider: "gemini",
       model: "gemini",
+    };
+  }
+
+  if (isGrokKey(apiKey)) {
+    return {
+      provider: "grok",
+      model: DEFAULT_GROK_MODEL,
+    };
+  }
+
+  if (isGroqKey(apiKey)) {
+    return {
+      provider: "groq",
+      model: DEFAULT_GROQ_MODEL,
     };
   }
 
@@ -175,6 +240,28 @@ function getRetryDelayMsFromHeaders(headers) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function mapWithConcurrency(items, maxConcurrency, worker) {
+  const list = Array.isArray(items) ? items : [];
+  const size = list.length;
+  if (size === 0) return [];
+
+  const safeConcurrency = Math.max(1, Math.min(Number(maxConcurrency) || 1, size));
+  const results = new Array(size);
+  let cursor = 0;
+
+  async function runWorker() {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= size) return;
+      results[index] = await worker(list[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: safeConcurrency }, () => runWorker()));
+  return results;
 }
 
 function safeJsonStringify(value) {
@@ -524,6 +611,168 @@ async function testWithOpenAI({ apiKey, imageDataUrl, model, timeoutMs }) {
     model,
     answer: answer || "Réponse vide de l'API.",
   };
+}
+
+async function testWithGrok({ apiKey, imageDataUrl, model, timeoutMs }) {
+  const selectedModel = String(model || DEFAULT_GROK_MODEL).trim() || DEFAULT_GROK_MODEL;
+  const endpoint = `${GROK_API_BASE_URL.replace(/\/$/, "")}/chat/completions`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: selectedModel === "grok" ? DEFAULT_GROK_MODEL : selectedModel,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: FIXED_PROMPT,
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: imageDataUrl,
+                },
+              },
+            ],
+          },
+        ],
+        temperature: 0,
+        max_tokens: 300,
+      }),
+      signal: controller.signal,
+    });
+
+    const responseText = await response.text();
+    let parsed = null;
+    try {
+      parsed = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      parsed = responseText;
+    }
+
+    if (!response.ok) {
+      const apiMessage =
+        (parsed && typeof parsed === "object" && (parsed.error?.message || parsed.error || parsed.message)) ||
+        `Erreur Grok (${response.status})`;
+      const error = new Error(String(apiMessage));
+      error.status = response.status;
+      throw error;
+    }
+
+    const rawContent = parsed?.choices?.[0]?.message?.content;
+    const answer = Array.isArray(rawContent)
+      ? rawContent
+          .map((item) => {
+            if (typeof item === "string") return item;
+            if (!item || typeof item !== "object") return "";
+            if (typeof item.text === "string") return item.text;
+            return "";
+          })
+          .filter(Boolean)
+          .join("\n")
+          .trim()
+      : String(rawContent || "").trim();
+
+    return {
+      status: "success",
+      provider: "grok",
+      model: selectedModel === "grok" ? DEFAULT_GROK_MODEL : selectedModel,
+      answer: answer || `Réponse vide de l'API Grok. Aperçu brut : ${truncateText(safeJsonStringify(parsed))}`,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function testWithGroq({ apiKey, imageDataUrl, model, timeoutMs }) {
+  const selectedModel = String(model || DEFAULT_GROQ_MODEL).trim() || DEFAULT_GROQ_MODEL;
+  const endpoint = `${GROQ_API_BASE_URL.replace(/\/$/, "")}/chat/completions`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: selectedModel === "groq" ? DEFAULT_GROQ_MODEL : selectedModel,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: FIXED_PROMPT,
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: imageDataUrl,
+                },
+              },
+            ],
+          },
+        ],
+        temperature: 0,
+        max_tokens: 300,
+      }),
+      signal: controller.signal,
+    });
+
+    const responseText = await response.text();
+    let parsed = null;
+    try {
+      parsed = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      parsed = responseText;
+    }
+
+    if (!response.ok) {
+      const apiMessage =
+        (parsed && typeof parsed === "object" && (parsed.error?.message || parsed.error || parsed.message)) ||
+        `Erreur Groq (${response.status})`;
+      const error = new Error(String(apiMessage));
+      error.status = response.status;
+      throw error;
+    }
+
+    const rawContent = parsed?.choices?.[0]?.message?.content;
+    const answer = Array.isArray(rawContent)
+      ? rawContent
+          .map((item) => {
+            if (typeof item === "string") return item;
+            if (!item || typeof item !== "object") return "";
+            if (typeof item.text === "string") return item.text;
+            return "";
+          })
+          .filter(Boolean)
+          .join("\n")
+          .trim()
+      : String(rawContent || "").trim();
+
+    return {
+      status: "success",
+      provider: "groq",
+      model: selectedModel === "groq" ? DEFAULT_GROQ_MODEL : selectedModel,
+      answer: answer || `Réponse vide de l'API Groq. Aperçu brut : ${truncateText(safeJsonStringify(parsed))}`,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function testWithHuggingFace({ apiKey, imageDataUrl, model, timeoutMs, retryCount = 0 }) {
@@ -880,18 +1129,30 @@ async function testSingleKey({ apiKey, imageDataUrl, selectedModel, timeoutMs })
     return testWithGemini({ apiKey, imageDataUrl, model, timeoutMs });
   }
 
+  if (provider === "grok") {
+    return testWithGrok({ apiKey, imageDataUrl, model, timeoutMs });
+  }
+
+  if (provider === "groq") {
+    return testWithGroq({ apiKey, imageDataUrl, model, timeoutMs });
+  }
+
   return testWithOpenAI({ apiKey, imageDataUrl, model, timeoutMs });
 }
 
 app.post("/api/test-keys", async (req, res) => {
-  const { keys, imageDataUrl, model, timeoutMs } = req.body || {};
+  const { keys, imageDataUrl, model, timeoutMs, maxConcurrent } = req.body || {};
 
   const parsedKeys = sanitizeKeys(keys);
   const selectedModel = String(model || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
   const parsedTimeout = Number(timeoutMs || 45000);
+  const parsedMaxConcurrent = Number(maxConcurrent || 1);
   const safeTimeout = Number.isFinite(parsedTimeout)
     ? Math.min(Math.max(parsedTimeout, 5000), 120000)
     : 45000;
+  const safeMaxConcurrent = Number.isFinite(parsedMaxConcurrent)
+    ? Math.min(Math.max(Math.floor(parsedMaxConcurrent), 1), Math.max(1, Math.floor(MAX_CONCURRENT_REQUESTS)))
+    : 1;
 
   if (parsedKeys.length === 0) {
     return res.status(400).json({
@@ -913,8 +1174,7 @@ app.post("/api/test-keys", async (req, res) => {
     });
   }
 
-  const results = [];
-  for (const key of parsedKeys) {
+  const results = await mapWithConcurrency(parsedKeys, safeMaxConcurrent, async (key) => {
     const resolved = resolveProvider({ apiKey: key, selectedModel });
 
     try {
@@ -925,25 +1185,25 @@ app.post("/api/test-keys", async (req, res) => {
         timeoutMs: safeTimeout,
       });
 
-      results.push({
+      return {
         keyLabel: maskKey(key),
         ...result,
         answer: normalizeToStrictJsonString(result.answer),
-      });
+      };
     } catch (error) {
       const message = error?.error?.message || error?.message || "Erreur inconnue";
       const statusCode = error?.status || null;
 
-      results.push({
+      return {
         keyLabel: maskKey(key),
         status: "error",
         provider: resolved.provider,
         model: resolved.model,
         error: message,
         statusCode,
-      });
+      };
     }
-  }
+  });
 
   return res.json({
     prompt: FIXED_PROMPT,
